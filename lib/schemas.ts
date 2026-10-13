@@ -6,28 +6,41 @@ import { z } from "zod";
 // Sharing them means one set of rules, and the same error messages in both places.
 
 /**
- * TASK 1 — TODO(candidate): make this a real http(s) media-URL check.
+ * A media source URL: http(s) only, and it must have a path (so there is a file to encode).
  *
- * Right now it accepts any non-empty string, which is not good enough.
- *
- * It should ACCEPT:
- *   https://cdn.example.com/videos/clip.mp4
- *   http://media.example.com/a/b/movie.mov
- *
- * It should REJECT (each with a message a user could act on):
- *   ""                                  → "Source URL is required"
- *   "not a url"                         → not a URL at all
- *   "ftp://cdn.example.com/clip.mp4"    → wrong protocol; only http and https
- *   "https://cdn.example.com"           → no file path, so there's nothing to encode
- *
- * Hints:
- *   - `new URL(value)` throws on strings that aren't URLs — wrap it in try/catch.
- *   - A parsed URL gives you `.protocol` (e.g. "https:") and `.pathname` (e.g. "/videos/clip.mp4").
- *   - Zod's `.refine((value) => boolean, { message })` is the tool for a custom rule. You can
- *     chain more than one refine, each with its own message.
- *   - Write the test for this FIRST — see __tests__/example.test.ts for the pattern.
+ * One `superRefine` with early returns, instead of several `.refine()`s, so a bad value gets
+ * exactly ONE message — Zod would otherwise run every refine and report them all.
  */
-export const sourceUrlSchema = z.string().min(1, "Source URL is required");
+export const sourceUrlSchema = z
+  .string()
+  .trim()
+  .min(1, "Source URL is required")
+  .superRefine((value, ctx) => {
+    if (value.length === 0) return; // the "required" message above already covers this
+
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      ctx.addIssue({
+        code: "custom",
+        message: "Enter a valid URL, e.g. https://cdn.example.com/videos/clip.mp4",
+      });
+      return;
+    }
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      ctx.addIssue({ code: "custom", message: "Only http and https URLs are supported" });
+      return;
+    }
+
+    if (url.pathname === "/") {
+      ctx.addIssue({
+        code: "custom",
+        message: "The URL must include a file path, e.g. /videos/clip.mp4",
+      });
+    }
+  });
 
 export const createJobSchema = z.object({
   sourceUrl: sourceUrlSchema,
