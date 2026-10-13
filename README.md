@@ -114,7 +114,7 @@ The hardest part was understanding how the polling cleanup works when leaving th
 
 ## Time spent
 
-About 3 to 4 hours, which includes reading and understanding the codebase, running the test suite, and manually testing the flows in the browser.
+About 4 to 5 hours, which includes reading and understanding the codebase, running the test suite, and manually testing the flows in the browser.
 
 ## AI use
 
