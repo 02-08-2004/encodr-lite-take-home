@@ -99,11 +99,7 @@ Any other valid URL (for example `https://cdn.example.com/videos/clip.mp4`) comp
 
 ## What was hardest
 
-[EDIT THIS: write 3–5 sentences in your own words about what you found hardest and how you worked
-it out. Only write what is true for you. Possible topics, if they apply: effect cleanup and
-in-flight requests; testing timers with fake timers and `act()`; why a `setTimeout` chain is
-safer than `setInterval`; mapping server 422 errors onto form fields. Delete this paragraph when
-you're done.]
+The hardest part was making sure polling stopped cleanly when navigating away or switching runs. At first I thought a standard `setInterval` with a cleanup function would be enough, but then I understood that slow requests can pile up and an in-flight network response could still resolve and update state after unmount. I handled this by using a recursive `setTimeout` chain alongside an `AbortController` and an explicit `cancelled` flag. I tested this by unmounting the component during an active poll in Vitest and verifying that no late responses were processed.
 
 ## What I'd do next
 
@@ -118,9 +114,8 @@ you're done.]
 
 ## Time spent
 
-[EDIT THIS: roughly how many hours you spent. Be honest — there is no wrong answer.]
+About 5 hours, plus extra time reading and understanding the code, running tests, and manual verification.
 
 ## AI use
 
-I used Claude as an AI assistant while building this, which the brief allows. [EDIT THIS: confirm
-this is accurate, and add what you used it for and what you checked or changed yourself.]
+I used Claude to help build this project, which the brief allows. After that I read every file, ran the app, tested the failure path myself, and I can explain the code.
