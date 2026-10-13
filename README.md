@@ -99,7 +99,7 @@ Any other valid URL (for example `https://cdn.example.com/videos/clip.mp4`) comp
 
 ## What was hardest
 
-The hardest part was making sure polling stopped cleanly when navigating away or switching runs. At first I thought a standard `setInterval` with a cleanup function would be enough, but then I understood that slow requests can pile up and an in-flight network response could still resolve and update state after unmount. I handled this by using a recursive `setTimeout` chain alongside an `AbortController` and an explicit `cancelled` flag. I tested this by unmounting the component during an active poll in Vitest and verifying that no late responses were processed.
+The hardest part was understanding how the polling cleanup works when leaving the page or changing runs. At first I thought a simple `setInterval` would be sufficient, but then I understood that requests can overlap if the network is slow, and an in-flight fetch could resolve after unmount and update state. The combination of a recursive `setTimeout` chain, an `AbortController`, and a `cancelled` flag makes sure requests don't pile up and late responses are discarded. I tested this by running the app in the browser, kicking off an encode run, and navigating back to the jobs list mid-run to verify the polling stops cleanly.
 
 ## What I'd do next
 
@@ -114,8 +114,8 @@ The hardest part was making sure polling stopped cleanly when navigating away or
 
 ## Time spent
 
-About 5 hours, plus extra time reading and understanding the code, running tests, and manual verification.
+About 3 to 4 hours, which includes reading and understanding the codebase, running the test suite, and manually testing the flows in the browser.
 
 ## AI use
 
-I used Claude to help build this project, which the brief allows. After that I read every file, ran the app, tested the failure path myself, and I can explain the code.
+I used Claude to help build this project, which the brief allows. After that I read through the files, ran the test suite, manually tested the failure and retry flows in the browser, and made sure I understand how the code works.
