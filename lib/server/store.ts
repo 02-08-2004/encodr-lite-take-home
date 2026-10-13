@@ -4,7 +4,7 @@ import { TIMELINE, type EncodeResult, type EncodeRun, type Job, type JobStatus }
 // Our "database" is two Maps held in memory. `next dev` is a single Node process, so this is fine
 // for the exercise. Restarting the dev server wipes everything — that's expected, don't work around it.
 //
-// Everything in this file is provided EXCEPT computeRun(), which is Task 3.
+// computeRun() below is the run state machine; the rest of the file is the in-memory store.
 
 const jobs = new Map<string, Job>();
 const runs = new Map<string, RunRecord>();
@@ -21,43 +21,62 @@ export interface RunRecord {
 export const FAIL_URL = "https://cdn.example.com/videos/corrupt.mp4";
 
 // ---------------------------------------------------------------------------
-// TASK 3 — the run state machine. This is the most interesting logic in the exercise.
+// The run state machine
 // ---------------------------------------------------------------------------
 
 /**
- * TODO(candidate): work out what state a run is in right now.
+ * Works out what state a run is in right now.
  *
- * There are no timers on the server. Instead, a run's state is a PURE FUNCTION of how much time
- * has passed since it started: `elapsed = now - record.startedAt`. Same inputs, same output, every
- * time — which is exactly why it's easy to unit-test (you pass in `now`, so no waiting around).
+ * There are no server timers: the state is a pure function of `now - record.startedAt`, so the
+ * same inputs always give the same output and tests can pass any `now` they like.
  *
- * Use the constants in TIMELINE (lib/types.ts) so your numbers match ours:
- *
- *   elapsed < 2000ms                  → stage "QUEUED"
- *   2000ms  ≤ elapsed < 6000ms        → stage "DOWNLOADING"
- *   6000ms  ≤ elapsed < 12000ms       → stage "TRANSCODING"
- *   elapsed ≥ 12000ms                 → stage "COMPLETED", and `result` is set (use makeResult())
- *
- *   EXCEPT: if record.sourceUrl === FAIL_URL and elapsed ≥ 8000ms, the run is "FAILED" with an
- *   `error` message explaining what went wrong. (Before 8000ms it behaves normally.)
- *
- * progressPct should be 0 at elapsed 0 and 100 once COMPLETED, and must never go backwards.
- * The simplest thing that works: scale elapsed across the whole 12s timeline. You do not need
- * per-stage percentages. For a FAILED run, freeze the percentage where it got to.
- *
- * `message` is one human-readable line for the UI's log, e.g. "Transcoding 1080p…".
- *
- * Return an EncodeRun (see lib/types.ts) — `error` only on FAILED, `result` only on COMPLETED.
- *
- * Suggested order of work: write the tests in __tests__/ first (one per stage boundary, one for
- * the failing URL), watch them fail, then make them pass.
+ * Boundaries are inclusive at the start and exclusive at the end (e.g. DOWNLOADING is
+ * 2000ms <= elapsed < 6000ms), so a run is already in the next stage exactly ON the boundary.
  */
 export function computeRun(record: RunRecord, now: number = Date.now()): EncodeRun {
-  throw new Error("Not implemented: computeRun (see TODO above)");
+  // A clock that is slightly behind startedAt should not produce a negative percentage.
+  const elapsed = Math.max(0, now - record.startedAt);
+  const base = { id: record.id, jobId: record.jobId };
+
+  if (record.sourceUrl === FAIL_URL && elapsed >= TIMELINE.failAtMs) {
+    return {
+      ...base,
+      stage: "FAILED",
+      progressPct: progressAt(TIMELINE.failAtMs), // frozen at the point of failure
+      message: "Encode failed",
+      error: "The source file is corrupt and could not be transcoded.",
+    };
+  }
+
+  if (elapsed >= TIMELINE.transcodingEndsMs) {
+    return {
+      ...base,
+      stage: "COMPLETED",
+      progressPct: 100,
+      message: "Encode complete",
+      result: makeResult(),
+    };
+  }
+
+  const progressPct = progressAt(elapsed);
+
+  if (elapsed >= TIMELINE.downloadingEndsMs) {
+    return { ...base, stage: "TRANSCODING", progressPct, message: "Transcoding renditions…" };
+  }
+  if (elapsed >= TIMELINE.queuedEndsMs) {
+    return { ...base, stage: "DOWNLOADING", progressPct, message: "Downloading source file…" };
+  }
+  return { ...base, stage: "QUEUED", progressPct, message: "Waiting in the queue…" };
+}
+
+/** Scales elapsed time across the whole timeline to 0–100. Grows with time, so never goes back. */
+function progressAt(elapsedMs: number): number {
+  const fraction = elapsedMs / TIMELINE.transcodingEndsMs;
+  return Math.min(100, Math.round(fraction * 100));
 }
 
 // ---------------------------------------------------------------------------
-// Everything below is provided.
+// The in-memory store
 // ---------------------------------------------------------------------------
 
 /** Fake but plausible encode output. Call this when a run reaches COMPLETED. */
@@ -117,21 +136,16 @@ export function getRun(id: string, now: number = Date.now()): EncodeRun | null {
 
 /**
  * A job's status is derived from its latest run rather than stored, so it can never drift out of
- * sync. Once computeRun() works, job statuses in the list start updating for free.
+ * sync. So job statuses in the list update on their own as runs progress.
  */
 function withDerivedStatus(job: Job): Job {
   if (!job.latestRunId) return job;
   const record = runs.get(job.latestRunId);
   if (!record) return job;
 
-  let status: JobStatus;
-  try {
-    const stage = computeRun(record).stage;
-    status = stage === "COMPLETED" ? "COMPLETED" : stage === "FAILED" ? "FAILED" : "RUNNING";
-  } catch {
-    // computeRun isn't implemented yet — leave the stored status alone.
-    return job;
-  }
+  const stage = computeRun(record).stage;
+  const status: JobStatus =
+    stage === "COMPLETED" ? "COMPLETED" : stage === "FAILED" ? "FAILED" : "RUNNING";
   return { ...job, status };
 }
 
